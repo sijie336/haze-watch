@@ -1,0 +1,65 @@
+name: hazewatch
+x-backend: &backend
+  build: ./backend
+  restart: unless-stopped
+  environment: &environment
+    DATABASE_URL: postgresql+psycopg://haze:${POSTGRES_PASSWORD:-local-development-only}@db:5432/haze
+    DATA_MODE: ${DATA_MODE:-demo}
+    DATA_GOV_API_KEY: ${DATA_GOV_API_KEY:-}
+    PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4200}
+    SMTP_HOST: ${SMTP_HOST:-mailpit}
+    SMTP_PORT: ${SMTP_PORT:-1025}
+    SMTP_TLS: ${SMTP_TLS:-false}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    SMTP_FROM: ${SMTP_FROM:-alerts@hazewatch.local}
+    MAIL_ID_DOMAIN: ${MAIL_ID_DOMAIN:-hazewatch.local}
+    POLL_SECONDS: ${POLL_SECONDS:-900}
+  depends_on:
+    db:
+      condition: service_healthy
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: haze
+      POSTGRES_USER: haze
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haze"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4200:80"
+    depends_on:
+      api:
+        condition: service_healthy
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+volumes:
+  pgdata:

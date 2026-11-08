@@ -1,0 +1,1 @@
+{"name":"hazewatch-local","private":true,"scripts":{"dev":".venv/bin/python scripts/serve.py"}}

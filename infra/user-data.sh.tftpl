@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2 unzip awscli
+systemctl enable --now docker
+mkdir -p /srv/hazewatch
+cd /srv/hazewatch
+aws s3 cp '${source}' /tmp/haze.zip --region '${region}'
+unzip -q /tmp/haze.zip
+umask 077
+aws secretsmanager get-secret-value --secret-id '${secret}' --query SecretString --output text --region '${region}' > .env
+printf '\nPUBLIC_URL=https://${domain}\nDATA_MODE=live\n' >> .env
+cat > Caddyfile <<'CADDY'
+${domain} {
+    encode gzip
+    reverse_proxy frontend:80
+}
+CADDY
+cat > compose.aws.yaml <<'COMPOSE'
+services:
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [frontend]
+  api:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: '${region}'
+        awslogs-group: '${log_group}'
+        awslogs-stream: api
+  worker:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: '${region}'
+        awslogs-group: '${log_group}'
+        awslogs-stream: worker
+volumes:
+  caddy_data:
+  caddy_config:
+COMPOSE
+docker compose -f compose.yaml -f compose.aws.yaml up -d --build
