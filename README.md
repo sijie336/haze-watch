@@ -22,7 +22,9 @@ python -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 npm --prefix frontend ci
 npm --prefix frontend run build
-PUBLIC_URL=http://localhost:3000 .venv/bin/python scripts/serve.py
+
+$env:PUBLIC_URL = "http://localhost:3000"
+.\.venv\Scripts\python.exe scripts\serve.py
 ```
 
 Open http://localhost:3000
